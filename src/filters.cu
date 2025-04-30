@@ -1,7 +1,9 @@
 #include "filters.h"
 #include <opencv2/opencv.hpp>
 #include <cuda_runtime.h>
+#include <iostream>
 
+// CUDA Kernel — 3x3 Box Blur
 __global__
 void blurKernel(unsigned char* input, unsigned char* output, int width, int height, int channels) {
     int x = blockIdx.x * blockDim.x + threadIdx.x;  
@@ -9,7 +11,7 @@ void blurKernel(unsigned char* input, unsigned char* output, int width, int heig
 
     if (x >= width || y >= height) return;  
 
-    int blurSize = 1; // 3x3 kernel
+    int blurSize = 1; // 3x3 kernel (1 pixel in each direction)
     float sum[3] = {0.0f, 0.0f, 0.0f};
     int count = 0;
 
@@ -32,6 +34,7 @@ void blurKernel(unsigned char* input, unsigned char* output, int width, int heig
     }
 }
 
+// Host Function — Apply Blur using CUDA
 void apply_blur(const cv::Mat& input, cv::Mat& output) {
     int width = input.cols;
     int height = input.rows;
@@ -41,20 +44,24 @@ void apply_blur(const cv::Mat& input, cv::Mat& output) {
     unsigned char* d_input;
     unsigned char* d_output;
 
+    // Allocate GPU memory
     cudaMalloc(&d_input, imgSize);
     cudaMalloc(&d_output, imgSize);
 
+    // Copy image data to GPU
     cudaMemcpy(d_input, input.data, imgSize, cudaMemcpyHostToDevice);
 
+    // Define CUDA grid/block dimensions
     dim3 blockSize(16, 16);
     dim3 gridSize((width + blockSize.x - 1) / blockSize.x,
                   (height + blockSize.y - 1) / blockSize.y);
 
-    blurKernel<<<gridSize, blockSize>>>(d_input, d_output, width, height, channels);
+    // Timing setup
+    cudaEvent_t start, stop;
+    cudaEventCreate(&start);
+    cudaEventCreate(&stop);
 
-    output.create(height, width, input.type());
-    cudaMemcpy(output.data, d_output, imgSize, cudaMemcpyDeviceToHost);
+    cudaEventRecord(start);
 
-    cudaFree(d_input);
-    cudaFree(d_output);
-}
+    // Launch CUDA kernel
+    blurKernel<<<
